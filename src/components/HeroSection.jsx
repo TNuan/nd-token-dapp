@@ -5,12 +5,24 @@ const HeroSection = ({ account, connectWallet, buyTokens, soldPercentage, usdRai
   const ndPerBnb = 3600; // 1 BNB = 3600 ND Token
   const ndAmount = bnbAmount ? (bnbAmount * ndPerBnb).toFixed(2) : '0';
 
-  const handleBuy = () => {
-    if (!bnbAmount || bnbAmount <= 0) {
+  const handleBuy = async () => {
+    if (!account) {
+      alert('Please connect your wallet first');
+      return;
+    }
+
+    if (!bnbAmount || parseFloat(bnbAmount) <= 0) {
       alert('Please enter a valid BNB amount');
       return;
     }
-    buyTokens(bnbAmount);
+
+    try {
+      await buyTokens(bnbAmount);
+      setBnbAmount(''); // Clear input after successful purchase
+    } catch (error) {
+      console.error('Purchase failed:', error);
+      alert('Failed to purchase tokens: ' + error.message);
+    }
   };
 
   return (
@@ -76,8 +88,11 @@ const HeroSection = ({ account, connectWallet, buyTokens, soldPercentage, usdRai
         <button
           onClick={account ? handleBuy : connectWallet}
           className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-2 rounded hover:from-blue-600 hover:to-purple-700"
+          disabled={account ? !bnbAmount : false}
         >
-          {account ? 'Buy ND Token' : 'Connect wallet & Pay'}
+          {account 
+            ? (bnbAmount ? 'Buy ND Token' : 'Enter BNB amount') 
+            : 'Connect wallet & Pay'}
         </button>
         <p className="text-center text-gray-400 mt-4">$250,000 GIVEAWAY</p>
       </div>

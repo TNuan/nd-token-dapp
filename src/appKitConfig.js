@@ -1,6 +1,6 @@
 import { createAppKit } from '@reown/appkit/react';
 import { EthersAdapter } from '@reown/appkit-adapter-ethers';
-import { bscTestnet } from '@wagmi/chains'; // Sử dụng BSC Testnet từ @wagmi/chains
+import { bscTestnet } from '@wagmi/chains';
 
 // 1. Get projectId
 const projectId = 'e0110a5b4a58f64717a8b85dd542bb2a'; // Thay bằng projectId của bạn
@@ -22,6 +22,7 @@ createAppKit({
   networks,
   metadata,
   projectId,
+  allowAutoConnect: false, // Tắt auto-connect
   themeMode: 'dark',
   themeVariables: {
     '--w3m-accent': '#facc15',
