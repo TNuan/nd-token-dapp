@@ -1,17 +1,19 @@
+import { useState, useEffect } from 'react';
+import { useAppKit, useAppKitAccount, useAppKitProvider } from '@reown/appkit/react';
+import { ethers } from 'ethers';
 import Navbar from './components/Navbar';
 import HeroSection from './components/HeroSection';
 import TransactionInfo from './components/TransactionInfo';
 import WhyNuandev from './components/WhyNuandev';
-import { useState, useEffect } from 'react';
-import Web3 from 'web3';
 
 const App = () => {
-  const [web3, setWeb3] = useState(null);
-  const [account, setAccount] = useState(null);
-  const [tokenSaleContract, setTokenSaleContract] = useState(null);
+  const { open } = useAppKit();
+  const { address: account, isConnected } = useAppKitAccount();
+  const { walletProvider } = useAppKitProvider();
   const [tokensSold, setTokensSold] = useState(0);
   const [totalSupply, setTotalSupply] = useState(0);
   const [usdRaised, setUsdRaised] = useState(0);
+  const [ndTokenAddress, setNdTokenAddress] = useState(null);
 
   const tokenSaleAddress = '0x05E0D1A399d4a5Cde8c158bdF2285862467f8C24'; // Thay bằng địa chỉ contract TokenSale
   const tokenSaleABI = [
@@ -169,62 +171,118 @@ const App = () => {
       "stateMutability": "payable",
       "type": "receive"
     }
-  ]; // Thay bằng ABI của contract TokenSale
+  ];
+
+  const erc20ABI = [
+    {
+      "constant": true,
+      "inputs": [],
+      "name": "totalSupply",
+      "outputs": [{ "name": "", "type": "uint256" }],
+      "payable": false,
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ];
+
+  // Tạo provider mặc định cho BSC Testnet (dùng khi chưa kết nối ví)
+  const defaultProvider = new ethers.JsonRpcProvider('https://data-seed-prebsc-1-s1.binance.org:8545');
+
+  // Tạo provider từ walletProvider nếu đã kết nối ví
+  const provider = walletProvider ? new ethers.BrowserProvider(walletProvider) : defaultProvider;
+
+  // Tạo contract instance
+  const tokenSaleContract = new ethers.Contract(tokenSaleAddress, tokenSaleABI, defaultProvider);
 
   useEffect(() => {
-    const initWeb3 = async () => {
-      if (window.ethereum) {
-        const web3Instance = new Web3(window.ethereum);
-        setWeb3(web3Instance);
-        try {
-          const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-          setAccount(accounts[0]);
+    if (account) {
+      fetchTokenData();
+    }
+  }, [account]);
 
-          const contract = new web3Instance.eth.Contract(tokenSaleABI, tokenSaleAddress);
-          console.log('Contract:', contract);
-          setTokenSaleContract(contract);
+  const fetchTokenData = async () => {
+    try {
+      // Lấy địa chỉ của ND Token
+      const ndTokenAddr = await tokenSaleContract.ndToken();
+      setNdTokenAddress(ndTokenAddr);
 
-          // Lấy dữ liệu từ smart contract
-          const sold = await contract.methods.tokensSold().call();
-          const supply = await contract.methods.totalSupply().call();
-          const raised = await contract.methods.usdRaised().call();
-          setTokensSold(sold);
-          setTotalSupply(supply);
-          setUsdRaised(raised);
-        } catch (error) {
-          console.error('Error connecting to MetaMask:', error);
-        }
-      } else {
-        alert('Please install MetaMask to use this feature!');
+      // Lấy số token đã bán
+      const sold = await tokenSaleContract.tokensSold();
+      setTokensSold(Number(sold));
+
+      // Lấy totalSupply từ ND Token contract
+      if (ndTokenAddr) {
+        const ndTokenContract = new ethers.Contract(ndTokenAddr, erc20ABI, defaultProvider);
+        const supply = await ndTokenContract.totalSupply();
+        setTotalSupply(Number(supply));
       }
-    };
-    initWeb3();
-  }, []);
+
+      // Tính USD raised (giả định giá BNB = 600 USD)
+      const bnbPrice = 600; // Giá BNB (USD), bạn có thể lấy từ API như CoinGecko
+      const contractBalance = await defaultProvider.getBalance(tokenSaleAddress);
+      const bnbRaised = Number(contractBalance) / 1e18; // Chuyển từ Wei sang BNB
+      const usd = bnbRaised * bnbPrice;
+      setUsdRaised(Math.round(usd));
+    } catch (error) {
+      console.error('Error fetching token data:', error);
+    }
+  };
 
   const connectWallet = async () => {
-    if (window.ethereum) {
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      setAccount(accounts[0]);
+    try {
+      await open();
+    } catch (error) {
+      console.error('Error connecting wallet:', error);
+      alert('Failed to connect wallet. Please try again.');
     }
   };
 
   const buyTokens = async (bnbAmount) => {
-    if (!tokenSaleContract || !account) return;
-    const weiAmount = web3.utils.toWei(bnbAmount, 'ether'); // BNB cũng sử dụng đơn vị Wei
+    if (!isConnected || !account) {
+      alert('Please connect your wallet first.');
+      return;
+    }
+
     try {
-      await tokenSaleContract.methods.buyTokens(account).send({
-        from: account,
-        value: weiAmount,
-      });
+      // Làm mới kết nối ví nếu walletProvider không có
+      if (!walletProvider) {
+        console.log('Wallet provider not available, attempting to reconnect...');
+        await open(); // Mở lại modal để làm mới kết nối
+        return;
+      }
+
+      // Tạo provider từ walletProvider
+      const browserProvider = new ethers.BrowserProvider(walletProvider);
+
+      // Lấy thông tin chain
+      const network = await browserProvider.getNetwork();
+      const chainId = Number(network.chainId);
+
+      // Kiểm tra chain ID (BSC Testnet chain ID là 97)
+      if (chainId !== 97) {
+        alert('Please switch to BSC Testnet in your wallet.');
+        return;
+      }
+
+      // Tạo signer từ provider
+      const signer = await browserProvider.getSigner();
+      console.log('Signer address:', await signer.getAddress()); // Debug signer
+
+      // Tạo contract instance với signer để thực hiện giao dịch
+      const contractWithSigner = new ethers.Contract(tokenSaleAddress, tokenSaleABI, signer);
+
+      // Chuyển BNB amount sang Wei
+      const weiAmount = ethers.parseEther(bnbAmount.toString());
+
+      // Gọi hàm buyTokens
+      const tx = await contractWithSigner.buyTokens({ value: weiAmount });
+      await tx.wait(); // Chờ giao dịch hoàn tất
+
       alert('Purchase successful!');
-      // Cập nhật lại dữ liệu
-      const sold = await tokenSaleContract.methods.tokensSold().call();
-      const raised = await tokenSaleContract.methods.usdRaised().call();
-      setTokensSold(sold);
-      setUsdRaised(raised);
+      fetchTokenData();
     } catch (error) {
       console.error('Purchase failed:', error);
-      alert('Purchase failed. Please try again.');
+      alert('Purchase failed: ' + (error.message || 'Unknown error. Please try again.'));
     }
   };
 

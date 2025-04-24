@@ -1,9 +1,9 @@
 import { useState } from 'react';
 
 const HeroSection = ({ account, connectWallet, buyTokens, soldPercentage, usdRaised, tokensSold }) => {
-  const [bnbAmount, setBnbAmount] = useState(''); // Thay ethAmount thành bnbAmount
+  const [bnbAmount, setBnbAmount] = useState('');
   const ndPerBnb = 3600; // 1 BNB = 3600 ND Token
-  const ndAmount = bnbAmount ? (bnbAmount * ndPerBnb).toFixed(2) : '0'; // Tính ND Token dựa trên BNB
+  const ndAmount = bnbAmount ? (bnbAmount * ndPerBnb).toFixed(2) : '0';
 
   const handleBuy = () => {
     if (!bnbAmount || bnbAmount <= 0) {
